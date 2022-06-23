@@ -221,7 +221,6 @@ int main() {
 
     while (1) {
         size_t clientFD = accept(socketFD, (struct sockaddr*)&client, &clientLen);
-        
         pid_t pid;
         if ((pid = fork()) == 0) {
             handleConnection(clientFD);
@@ -231,8 +230,6 @@ int main() {
             perror("Fork: ");
             exit(1);
         }
-        
-        //handleConnection(clientFD);
     }
 
     close(socketFD);
