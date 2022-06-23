@@ -265,8 +265,6 @@ void handleConnection(size_t clientFD) {
 
         close(clientFD);
 
-    } else if (strcmp(data,"HEAD")) {
-        
     } else {
         send(clientFD,REPLY_501,strlen(REPLY_501),0);
         close(clientFD);
