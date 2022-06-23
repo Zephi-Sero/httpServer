@@ -34,6 +34,20 @@
  */
 
 #include "mimeTypes.h"
+/* mimeTypes.h contains:
+ *
+ * typedef struct {
+ *     char const *const Extension;
+ *     char const *const Type;
+ * } mimeType;
+ *
+ * const mimeType mTypes[] = {
+ *     {".html","Content-Type: text/html\r\n"},
+ *     // This goes on for quite some time with various mime types
+ * };
+ *
+ */
+
 
 #define PORT 8080
 #define MAXIMUM_REQUEST_SIZE 1024
@@ -41,6 +55,8 @@
 #define REPLY_200 "HTTP/1.0 200 OK\r\n"
 #define REPLY_404 "HTTP/1.0 404 Not Found\r\n\r\n<html>\n\t<body>\n\t\t<h1>404 Not Found</h1>\n\t</body>\n</html>"
 #define REPLY_501 "HTTP/1.0 501 Not Implemented\r\n\r\n<html>\n\t<body>\n\t\t<h1>500 Not Implemented</h1>\n\t</body>\n</html>"
+#define SERVER "Server: Reese's httpServer V0.69\r\n"
+
 
 #define END  "\r\n"
 
@@ -118,7 +134,7 @@ void handleConnection(size_t clientFD) {
         send(clientFD,REPLY_404,strlen(REPLY_404),0);
         free(requestData);
         close(clientFD);
-        exit(1);
+        return;
     }
     if ((strcmp(data,"GET") == 0) || (strcmp(data,"HEAD") == 0)) {
         int headState = 0;
@@ -154,21 +170,25 @@ void handleConnection(size_t clientFD) {
             close(clientFD);
             free(requestData);
             free(location);
-            exit(1);
+            return;
         }
-        char  *buffer = calloc(1024*8,sizeof(char));
-        if (bufferSize < st.st_size) {
-            bufferSize += st.st_size;
-            buffer = realloc(buffer,bufferSize);
+        char *buffer;
+        if (headState == 0) {
+            buffer = calloc(1024*8,sizeof(char));
+            if (bufferSize < st.st_size) {
+                bufferSize += st.st_size;
+                buffer = realloc(buffer,bufferSize);
+            }
+            fread(buffer,sizeof(char),st.st_size,file);
+            fclose(file);
         }
-        fread(buffer,sizeof(char),st.st_size,file);
-        fclose(file);
 
         char *mime = getMimeType(location);
         char *leng = getContentLength(st.st_size);
         send(clientFD,REPLY_200,strlen(REPLY_200),MSG_MORE);
         send(clientFD,leng,strlen(leng),MSG_MORE);
         send(clientFD,mime,strlen(mime),MSG_MORE);
+        send(clientFD,SERVER,strlen(SERVER),MSG_MORE);
         send(clientFD,END,strlen(END),MSG_MORE);
         if (headState == 0) {
             send(clientFD,buffer,st.st_size,0);
@@ -183,7 +203,6 @@ void handleConnection(size_t clientFD) {
         close(clientFD);
     }
     free(requestData);
-    exit(0);
 }
 
 int main() {
@@ -208,7 +227,7 @@ int main() {
         exit(1);
     }
 
-    if ((listen(socketFD,16)) != 0) {
+    if ((listen(socketFD,64)) != 0) {
         perror("Failed to listen");
         exit(1);
     }
@@ -224,6 +243,7 @@ int main() {
         pid_t pid;
         if ((pid = fork()) == 0) {
             handleConnection(clientFD);
+            exit(1);
         } else if (pid != -1) {
             close(clientFD);
         } else {
