@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <arpa/inet.h>
 
 /* This is free and unencumbered software released into the public domain.
@@ -32,6 +33,8 @@
  * For more information, please refer to <http://unlicense.org/>
  */
 
+#include "mimeTypes.h"
+
 #define PORT 8080
 #define MAXIMUM_REQUEST_SIZE 1024
 
@@ -39,8 +42,7 @@
 #define REPLY_404 "HTTP/1.0 404 Not Found\r\n\r\n<html>\n\t<body>\n\t\t<h1>404 Not Found</h1>\n\t</body>\n</html>"
 #define REPLY_501 "HTTP/1.0 501 Not Implemented\r\n\r\n<html>\n\t<body>\n\t\t<h1>500 Not Implemented</h1>\n\t</body>\n</html>"
 
-#define START "Content-Type: "
-#define END  "\r\n\r\n"
+#define END  "\r\n"
 
 void rstripWhitespace(char *data) {
     int i = strlen(data)-1;
@@ -64,155 +66,59 @@ void rstripWhitespace(char *data) {
     }
 }
 
-size_t getExtensionHash(char *location, size_t locationLen) {
-    size_t hash = 0;
-    size_t j = 0;
-    for (int i = locationLen;i > 0;i--) {
-        hash += location[i];
-        if (location[i] > 111)
-            j += 10;
-        else
-            hash *= 2;
+char *getMimeType(char *location) {
+    int locationLen = strlen(location);
+
+    char *output = calloc(locationLen,sizeof(char));
+    int j = 0;
+    for (int i = locationLen-1;i > 0;i--) {
+        output[j] = location[i];
         j++;
         if (location[i] == '.') break;
     }
-    hash += j;
-    return hash;
-}
 
-char *getMimeType(char *location) {
-    size_t locationLen = strlen(location)-1;
-    size_t hash = getExtensionHash(location,locationLen);
 
-    /* You can add and remove items from this
-     * switch statement if you do not need them.
-     * Here is a python script for easily convering text
-     * into the hashed data:
-     *
-     * #!/bin/env python3
-     * import sys
-     * hash= 0
-     * j = 0
-     * print(sys.argv[1][::-1])
-     * for i in sys.argv[1][::-1]:
-     *    hash += ord(i)
-     *    if ord(i) > 111:
-     *        j += 10
-     *    else:
-     *        hash *= 2
-     *    j += 1
-     *    if i == '.':
-     *        break
-     * hash += j
-     * print(hash)
-     *
-     */
-
-    switch (hash) {
-        /* audio/.* */
-        case 2044: /* .aac */
-            return START"audio/aac"END;
-        case 1398: /* .mp3 */
-            return START"audio/mpeg"END;
-        case 1214: /* .wav */
-            return START"audio/wav"END;
-        case 6089: /* .flac */
-            return START"audio/x-flac"END;
-
-        /* application/.* */
-        case 3639: /* .json */
-            return START"application/json"END;
-        case 2230: /* .abw */
-            return START"application/x-abiword"END;
-        case 1742: /* .arc */
-            return START"application/x-freearc"END;
-        case 3088: /* .bin */
-            return START"application/octet-stream"END;
-        case 985:  /* .bz */
-            return START"application/x-bzip"END;
-        case 1386: /* .bz2 */
-            return START"application/x-bzip2"END;
-        case 2968: /* .doc */
-            return START"application/msword"END;
-        case 4899: /* .docx */
-            return START"application/vnd.openxmlformats-officedocument.wordprocessingml.document"END;
-        case 2221: /* .epub */
-            return START"application/epub+zip"END;
-        case 1005: /* .gz */
-            return START"application/gzip"END;
-        case 2218: /* .jar */
-            return START"application/java-archive"END;
-        case 1546: /* .pdf */
-            return START"application/pdf"END;
-        case 751:  /* .sh */
-            return START"application/x-sh"END;
-        case 1192: /* .tar */
-            return START"application/x-tar"END;
-        case 1228: /* .zip */
-            return START"application/zip"END;
-        case 1794: /* .csh */
-            return START"application/x-csh"END;
-
-        /* image/.* */
-        case 3439: /* .avif */
-            return START"image/avig"END;
-        case 2266: /* .bmp */
-            return START"image/bmp"END;
-        case 3084: /* .ico */
-            return START"image/vnd.microsoft.icon"END;
-        case 1594: /* .png */
-            return START"image/png"END;
-        case 994:  /* .svg */
-            return START"image/svg+xml"END;
-
-        /* video/.* */
-        case 1806: /* .avi */
-            return START"video/x-msvideo"END;
-        case 1486: /* .mp4 */
-            return START"video/mp4"END;
-        case 3447: /* .mpeg */
-            return START"video/mpeg"END;
-
-        /* text/.* */
-        case 3587: /* .html */
-        case 1858: /* .htm */
-            return START"text/html"END;
-        case 1432:  /* .css */
-            return START"text/css"END;
-        case 989:  /* .js */
-            return START"text/javascript"END;
-        case 1444: /* .csv */
-            return START"text/csv"END;
-        case 830:  /* .txt */
-            return START"text/plain"END;
-
-        /* umknown */
-        default:
-            return END;
+    int outputLen = strlen(output);
+    int end = outputLen/2;
+    j = outputLen-1;
+    char temp;
+    for (int i = 0;i < end;i++) {
+        temp = output[j];
+        output[j] = output[i];
+        output[i] = temp;
+        j--;
     }
+
+    for (int i = 0;i < sizeof(mTypes)/sizeof(mimeType);i++) {
+        if (strcmp(output,mTypes[i].Extension) == 0) {
+            free(output);
+            return (char *)mTypes[i].Type;
+        }
+    }
+    free(output);
+    return "";
 }
 
 char *getContentLength(size_t length) {
-        char *buf;
-        buf = calloc(128,sizeof(char));
-        sprintf(buf, "Content-Length: %lu\r\n",length);
-        return buf;
+    char *buf = calloc(256,sizeof(char));
+    sprintf(buf, "Content-Length: %lu\r\n",length);
+    return buf;
 }
 
-char  *location;
-char  *buffer;
-size_t bufferSize;
-struct stat st;
+
 void handleConnection(size_t clientFD) {
     char *requestData = calloc(MAXIMUM_REQUEST_SIZE,sizeof(char));
+
+    size_t bufferSize = 1024;
 
     recv(clientFD, requestData, MAXIMUM_REQUEST_SIZE, 0);
 
     char *data = strtok(requestData," ");
     if (data == NULL) {
+        send(clientFD,REPLY_404,strlen(REPLY_404),0);
         free(requestData);
         close(clientFD);
-        return;
+        exit(1);
     }
     if ((strcmp(data,"GET") == 0) || (strcmp(data,"HEAD") == 0)) {
         int headState = 0;
@@ -221,10 +127,11 @@ void handleConnection(size_t clientFD) {
         char *data = strtok(NULL," ");
         rstripWhitespace(data);
 
+        char  *location = calloc(1024,sizeof(char));
         if (strcmp(data,"/") == 0) {
-            memmove(location,"./index.html", sizeof("./index.html"));
+            memmove(location,"./index.html", strlen("./index.html"));
         } else {
-            memmove(location,"./",sizeof("./"));
+            memmove(location,"./",strlen("./"));
             strcat(location,data);
 
             for (size_t i = 0;i < strlen(location);i++) {
@@ -238,14 +145,18 @@ void handleConnection(size_t clientFD) {
             }
         }
 
+        struct stat st;
         stat(location, &st);
 
         FILE *file = fopen(location,"r");
         if (file == NULL) {
             send(clientFD,REPLY_404,strlen(REPLY_404),0);
             close(clientFD);
-            return;
+            free(requestData);
+            free(location);
+            exit(1);
         }
+        char  *buffer = calloc(1024*8,sizeof(char));
         if (bufferSize < st.st_size) {
             bufferSize += st.st_size;
             buffer = realloc(buffer,bufferSize);
@@ -253,24 +164,26 @@ void handleConnection(size_t clientFD) {
         fread(buffer,sizeof(char),st.st_size,file);
         fclose(file);
 
-
         char *mime = getMimeType(location);
         char *leng = getContentLength(st.st_size);
         send(clientFD,REPLY_200,strlen(REPLY_200),MSG_MORE);
         send(clientFD,leng,strlen(leng),MSG_MORE);
         send(clientFD,mime,strlen(mime),MSG_MORE);
+        send(clientFD,END,strlen(END),MSG_MORE);
         if (headState == 0) {
             send(clientFD,buffer,st.st_size,0);
         }
-
+        free(leng);
+        free(buffer);
+        free(location);
         close(clientFD);
 
     } else {
         send(clientFD,REPLY_501,strlen(REPLY_501),0);
         close(clientFD);
     }
-
-    return;
+    free(requestData);
+    exit(0);
 }
 
 int main() {
@@ -303,12 +216,23 @@ int main() {
     struct sockaddr_in client;
     socklen_t clientLen = sizeof(client);
 
-    location   = calloc(1024,sizeof(char));
-    buffer     = calloc(1024,sizeof(char));
-    bufferSize = 1024;
+    /* Ignore when a child exits as we do not care about its return value */
+    signal(SIGCHLD,SIG_IGN);
 
     while (1) {
-        handleConnection(accept(socketFD, (struct sockaddr*)&client, &clientLen));
+        size_t clientFD = accept(socketFD, (struct sockaddr*)&client, &clientLen);
+        
+        pid_t pid;
+        if ((pid = fork()) == 0) {
+            handleConnection(clientFD);
+        } else if (pid != -1) {
+            close(clientFD);
+        } else {
+            perror("Fork: ");
+            exit(1);
+        }
+        
+        //handleConnection(clientFD);
     }
 
     close(socketFD);
