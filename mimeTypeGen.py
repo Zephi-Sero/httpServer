@@ -38,6 +38,7 @@ for line in fullfile:
         continue
 
     type = line.pop(0)
+    temp = template.replace("{2}",type);
     for i in line:
-        print(template.replace("{1}",i).replace("{2}",type))
+        print(temp.replace("{1}",i))
 print("};")
