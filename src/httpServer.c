@@ -48,7 +48,6 @@
  *
  */
 
-
 #define PORT 8080
 #define MAXIMUM_REQUEST_SIZE 1024
 
@@ -182,7 +181,7 @@ int main() {
     struct sockaddr_in serverAddr;
 
     socketFD = socket(AF_INET, SOCK_STREAM, 0);
-  
+ 
     { /* I do not wish to dirty my code with this but alas it is needed */
         int optVal = 1;
         setsockopt(socketFD, SOL_SOCKET, SO_REUSEADDR, (void *)&optVal, sizeof(optVal));
