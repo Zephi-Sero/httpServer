@@ -20,7 +20,7 @@ const mimeType mTypes[] = {
 
 """
 
-template = "    {\".{1}\",\"Content-Type: {2}\\r\\n\"},"
+template = "    {\"{1}\",\"Content-Type: {2}\\r\\n\"},"
 
 print(base)
 

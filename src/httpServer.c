@@ -42,7 +42,7 @@
  * } mimeType;
  *
  * const mimeType mTypes[] = {
- *     {".html","Content-Type: text/html\r\n"},
+ *     {"html","Content-Type: text/html\r\n"},
  *     // This goes on for quite some time with various mime types
  * };
  *
@@ -55,22 +55,19 @@
 #define REPLY_200 "HTTP/1.0 200 OK\r\n"
 #define REPLY_404 "HTTP/1.0 404 Not Found\r\n\r\n<html>\n\t<body>\n\t\t<h1>404 Not Found</h1>\n\t</body>\n</html>"
 #define REPLY_501 "HTTP/1.0 501 Not Implemented\r\n\r\n<html>\n\t<body>\n\t\t<h1>500 Not Implemented</h1>\n\t</body>\n</html>"
-#define SERVER "Server: Reese's httpServer V0.69\r\n"
-
 
 #define END  "\r\n"
 
 void rstripWhitespace(char *data) {
-    int i = strlen(data)-1;
-    char t = data[i];
-    if ((t == ' ' || t == '\r' || t == '\n')) {
+    int i = strlen(data);
+    char t = data[i-1];
+    if ((t == ' ') || (t == '\r') || (t == '\n')) {
         int cont = 1;
         while (cont) {
             switch (data[i]) {
                 case ' ':
                 case '\r':
                 case '\n':
-                    data[i] = 0;
                     i--;
                     break;
 
@@ -79,53 +76,26 @@ void rstripWhitespace(char *data) {
                     break;
             }
         }
+        data[i-1] = 0;
     }
 }
 
 char *getMimeType(char *location) {
-    int locationLen = strlen(location);
 
-    char *output = calloc(locationLen,sizeof(char));
-    int j = 0;
-    for (int i = locationLen-1;i > 0;i--) {
-        output[j] = location[i];
-        j++;
-        if (location[i] == '.') break;
-    }
-
-
-    int outputLen = strlen(output);
-    int end = outputLen/2;
-    j = outputLen-1;
-    char temp;
-    for (int i = 0;i < end;i++) {
-        temp = output[j];
-        output[j] = output[i];
-        output[i] = temp;
-        j--;
-    }
+    char *output = strrchr(location, '.')+1;
+    if (output == NULL)
+        return "";
 
     for (int i = 0;i < sizeof(mTypes)/sizeof(mimeType);i++) {
         if (strcmp(output,mTypes[i].Extension) == 0) {
-            free(output);
             return (char *)mTypes[i].Type;
         }
     }
-    free(output);
     return "";
 }
 
-char *getContentLength(size_t length) {
-    char *buf = calloc(256,sizeof(char));
-    sprintf(buf, "Content-Length: %lu\r\n",length);
-    return buf;
-}
-
-
 void handleConnection(size_t clientFD) {
     char *requestData = calloc(MAXIMUM_REQUEST_SIZE,sizeof(char));
-
-    size_t bufferSize = 1024;
 
     recv(clientFD, requestData, MAXIMUM_REQUEST_SIZE, 0);
 
@@ -145,18 +115,21 @@ void handleConnection(size_t clientFD) {
 
         char  *location = calloc(1024,sizeof(char));
         if (strcmp(data,"/") == 0) {
-            memmove(location,"./index.html", strlen("./index.html"));
+            /* Redirect / to index.html */
+            strcat(location,"./index.html");
         } else {
-            memmove(location,"./",strlen("./"));
-            strcat(location,data);
+            /* Prepend a ./ just incase they try doing a funny */
+            sprintf(location,"./%s",data);
 
-            for (size_t i = 0;i < strlen(location);i++) {
-                if (location[i] == '.' && location[i+1] == '.') {
-                    location[i]   = '/';
-                    location[i+1] = '/';
-                }
+            /* This strips any possible .. comedy */
+            char *temp;
+            while ((temp = strstr(location,"..")) != NULL) {
+                temp[0] = '.';
+                temp[1] = '/';
             }
-            if (location[strlen(location)-1] == '/') {
+
+            /* Check if the last character is / and redirect to index.html */
+            if (location[strlen(location)] == '/') {
                 strcat(location,"./index.html");
             }
         }
@@ -174,26 +147,24 @@ void handleConnection(size_t clientFD) {
         }
         char *buffer;
         if (headState == 0) {
-            buffer = calloc(1024*8,sizeof(char));
-            if (bufferSize < st.st_size) {
-                bufferSize += st.st_size;
-                buffer = realloc(buffer,bufferSize);
-            }
+            buffer = calloc(st.st_size+1,sizeof(char));
             fread(buffer,sizeof(char),st.st_size,file);
             fclose(file);
         }
 
         char *mime = getMimeType(location);
-        char *leng = getContentLength(st.st_size);
+        /* Reuse the location buffer to store the Content-Length header */
+        sprintf(location, "Content-Length: %lu\r\n",st.st_size);
+
         send(clientFD,REPLY_200,strlen(REPLY_200),MSG_MORE);
-        send(clientFD,leng,strlen(leng),MSG_MORE);
+        send(clientFD,location,strlen(location),MSG_MORE);
         send(clientFD,mime,strlen(mime),MSG_MORE);
-        send(clientFD,SERVER,strlen(SERVER),MSG_MORE);
-        send(clientFD,END,strlen(END),MSG_MORE);
         if (headState == 0) {
+            send(clientFD,END,strlen(END),MSG_MORE);
             send(clientFD,buffer,st.st_size,0);
+        } else {
+            send(clientFD,END,strlen(END),0);
         }
-        free(leng);
         free(buffer);
         free(location);
         close(clientFD);
@@ -206,7 +177,6 @@ void handleConnection(size_t clientFD) {
 }
 
 int main() {
-
 
     int socketFD;
     struct sockaddr_in serverAddr;
@@ -227,7 +197,7 @@ int main() {
         exit(1);
     }
 
-    if ((listen(socketFD,64)) != 0) {
+    if ((listen(socketFD,32)) != 0) {
         perror("Failed to listen");
         exit(1);
     }
@@ -243,7 +213,7 @@ int main() {
         pid_t pid;
         if ((pid = fork()) == 0) {
             handleConnection(clientFD);
-            exit(1);
+            exit(0);
         } else if (pid != -1) {
             close(clientFD);
         } else {
