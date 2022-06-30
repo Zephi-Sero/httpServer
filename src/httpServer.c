@@ -37,13 +37,13 @@
 /* mimeTypes.h contains:
  *
  * typedef struct {
- *     char const *const Extension;
- *     char const *const Type;
+ *	 char const *const Extension;
+ *	 char const *const Type;
  * } mimeType;
  *
  * const mimeType mTypes[] = {
- *     {"html","Content-Type: text/html\r\n"},
- *     // This goes on for quite some time with various mime types
+ *	 {"html","Content-Type: text/html\r\n"},
+ *	 // This goes on for quite some time with various mime types
  * };
  *
  */
@@ -58,170 +58,170 @@
 #define END  "\r\n"
 
 void rstripWhitespace(char *data) {
-    int i = strlen(data);
-    char t = data[i-1];
-    if ((t == ' ') || (t == '\r') || (t == '\n')) {
-        int cont = 1;
-        while (cont) {
-            switch (data[i]) {
-                case ' ':
-                case '\r':
-                case '\n':
-                    i--;
-                    break;
+	int i = strlen(data);
+	char t = data[i-1];
+	if ((t == ' ') || (t == '\r') || (t == '\n')) {
+		int cont = 1;
+		while (cont) {
+			switch (data[i]) {
+				case ' ':
+				case '\r':
+				case '\n':
+					i--;
+					break;
 
-                default:
-                    cont = 0;
-                    break;
-            }
-        }
-        data[i-1] = 0;
-    }
+				default:
+					cont = 0;
+					break;
+			}
+		}
+		data[i-1] = 0;
+	}
 }
 
 char *getMimeType(char *location) {
 
-    char *output = strrchr(location, '.')+1;
-    if (output == NULL)
-        return "";
+	char *output = strrchr(location, '.')+1;
+	if (output == NULL)
+		return "";
 
-    for (int i = 0;i < sizeof(mTypes)/sizeof(mimeType);i++) {
-        if (strcmp(output,mTypes[i].Extension) == 0) {
-            return (char *)mTypes[i].Type;
-        }
-    }
-    return "";
+	for (int i = 0;i < sizeof(mTypes)/sizeof(mimeType);i++) {
+		if (strcmp(output,mTypes[i].Extension) == 0) {
+			return (char *)mTypes[i].Type;
+		}
+	}
+	return "";
 }
 
 void handleConnection(size_t clientFD) {
-    char *requestData = calloc(MAXIMUM_REQUEST_SIZE,sizeof(char));
+	char *requestData = calloc(MAXIMUM_REQUEST_SIZE,sizeof(char));
 
-    recv(clientFD, requestData, MAXIMUM_REQUEST_SIZE, 0);
+	recv(clientFD, requestData, MAXIMUM_REQUEST_SIZE, 0);
 
-    char *data = strtok(requestData," ");
-    if (data == NULL) {
-        send(clientFD,REPLY_404,strlen(REPLY_404),0);
-        free(requestData);
-        close(clientFD);
-        return;
-    }
-    if ((strcmp(data,"GET") == 0) || (strcmp(data,"HEAD") == 0)) {
-        int headState = 0;
-        if (strcmp(data,"HEAD") == 0)
-            headState = 1;
-        char *data = strtok(NULL," ");
-        rstripWhitespace(data);
+	char *data = strtok(requestData," ");
+	if (data == NULL) {
+		send(clientFD,REPLY_404,strlen(REPLY_404),0);
+		free(requestData);
+		close(clientFD);
+		return;
+	}
+	if ((strcmp(data,"GET") == 0) || (strcmp(data,"HEAD") == 0)) {
+		int headState = 0;
+		if (strcmp(data,"HEAD") == 0)
+			headState = 1;
+		char *data = strtok(NULL," ");
+		rstripWhitespace(data);
 
-        char  *location = calloc(1024,sizeof(char));
-        if (strcmp(data,"/") == 0) {
-            /* Redirect / to index.html */
-            strcat(location,"./index.html");
-        } else {
-            /* Prepend a ./ just incase they try doing a funny */
-            sprintf(location,"./%s",data);
+		char  *location = calloc(1024,sizeof(char));
+		if (strcmp(data,"/") == 0) {
+			/* Redirect / to index.html */
+			strcat(location,"./index.html");
+		} else {
+			/* Prepend a ./ just incase they try doing a funny */
+			sprintf(location,"./%s",data);
 
-            /* This strips any possible .. comedy */
-            char *temp;
-            while ((temp = strstr(location,"..")) != NULL) {
-                temp[0] = '.';
-                temp[1] = '/';
-            }
+			/* This strips any possible .. comedy */
+			char *temp;
+			while ((temp = strstr(location,"..")) != NULL) {
+				temp[0] = '.';
+				temp[1] = '/';
+			}
 
-            /* Check if the last character is / and redirect to index.html */
-            if (location[strlen(location)] == '/') {
-                strcat(location,"./index.html");
-            }
-        }
+			/* Check if the last character is / and redirect to index.html */
+			if (location[strlen(location)] == '/') {
+				strcat(location,"./index.html");
+			}
+		}
 
-        struct stat st;
-        stat(location, &st);
+		struct stat st;
+		stat(location, &st);
 
-        FILE *file = fopen(location,"r");
-        if (file == NULL) {
-            send(clientFD,REPLY_404,strlen(REPLY_404),0);
-            close(clientFD);
-            free(requestData);
-            free(location);
-            return;
-        }
-        char *buffer;
-        if (headState == 0) {
-            buffer = calloc(st.st_size+1,sizeof(char));
-            fread(buffer,sizeof(char),st.st_size,file);
-            fclose(file);
-        }
+		FILE *file = fopen(location,"r");
+		if (file == NULL) {
+			send(clientFD,REPLY_404,strlen(REPLY_404),0);
+			close(clientFD);
+			free(requestData);
+			free(location);
+			return;
+		}
+		char *buffer;
+		if (headState == 0) {
+			buffer = calloc(st.st_size+1,sizeof(char));
+			fread(buffer,sizeof(char),st.st_size,file);
+			fclose(file);
+		}
 
-        char *mime = getMimeType(location);
-        /* Reuse the location buffer to store the Content-Length header */
-        sprintf(location, "Content-Length: %lu\r\n",st.st_size);
+		char *mime = getMimeType(location);
+		/* Reuse the location buffer to store the Content-Length header */
+		sprintf(location, "Content-Length: %lu\r\n",st.st_size);
 
-        send(clientFD,REPLY_200,strlen(REPLY_200),MSG_MORE);
-        send(clientFD,location,strlen(location),MSG_MORE);
-        send(clientFD,mime,strlen(mime),MSG_MORE);
-        if (headState == 0) {
-            send(clientFD,END,strlen(END),MSG_MORE);
-            send(clientFD,buffer,st.st_size,0);
-        } else {
-            send(clientFD,END,strlen(END),0);
-        }
-        free(buffer);
-        free(location);
-        close(clientFD);
+		send(clientFD,REPLY_200,strlen(REPLY_200),MSG_MORE);
+		send(clientFD,location,strlen(location),MSG_MORE);
+		send(clientFD,mime,strlen(mime),MSG_MORE);
+		if (headState == 0) {
+			send(clientFD,END,strlen(END),MSG_MORE);
+			send(clientFD,buffer,st.st_size,0);
+		} else {
+			send(clientFD,END,strlen(END),0);
+		}
+		free(buffer);
+		free(location);
+		close(clientFD);
 
-    } else {
-        send(clientFD,REPLY_501,strlen(REPLY_501),0);
-        close(clientFD);
-    }
-    free(requestData);
+	} else {
+		send(clientFD,REPLY_501,strlen(REPLY_501),0);
+		close(clientFD);
+	}
+	free(requestData);
 }
 
 int main() {
 
-    int socketFD;
-    struct sockaddr_in serverAddr;
+	int socketFD;
+	struct sockaddr_in serverAddr;
 
-    socketFD = socket(AF_INET, SOCK_STREAM, 0);
+	socketFD = socket(AF_INET, SOCK_STREAM, 0);
  
-    { /* I do not wish to dirty my code with this but alas it is needed */
-        int optVal = 1;
-        setsockopt(socketFD, SOL_SOCKET, SO_REUSEADDR, (void *)&optVal, sizeof(optVal));
-    }
+	{ /* I do not wish to dirty my code with this but alas it is needed */
+		int optVal = 1;
+		setsockopt(socketFD, SOL_SOCKET, SO_REUSEADDR, (void *)&optVal, sizeof(optVal));
+	}
 
-    serverAddr.sin_family      = AF_INET;
-    serverAddr.sin_port        = htons(PORT);
-    serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+	serverAddr.sin_family	  = AF_INET;
+	serverAddr.sin_port		= htons(PORT);
+	serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
 
-    if ((bind(socketFD, (struct sockaddr*)&serverAddr, sizeof(serverAddr))) != 0) {
-        perror("Socket binding failed");
-        exit(1);
-    }
+	if ((bind(socketFD, (struct sockaddr*)&serverAddr, sizeof(serverAddr))) != 0) {
+		perror("Socket binding failed");
+		exit(1);
+	}
 
-    if ((listen(socketFD,32)) != 0) {
-        perror("Failed to listen");
-        exit(1);
-    }
+	if ((listen(socketFD,32)) != 0) {
+		perror("Failed to listen");
+		exit(1);
+	}
 
-    struct sockaddr_in client;
-    socklen_t clientLen = sizeof(client);
+	struct sockaddr_in client;
+	socklen_t clientLen = sizeof(client);
 
-    /* Ignore when a child exits as we do not care about its return value */
-    signal(SIGCHLD,SIG_IGN);
+	/* Ignore when a child exits as we do not care about its return value */
+	signal(SIGCHLD,SIG_IGN);
 
-    while (1) {
-        size_t clientFD = accept(socketFD, (struct sockaddr*)&client, &clientLen);
-        pid_t pid;
-        if ((pid = fork()) == 0) {
-            handleConnection(clientFD);
-            exit(0);
-        } else if (pid != -1) {
-            close(clientFD);
-        } else {
-            perror("Fork: ");
-            exit(1);
-        }
-    }
+	while (1) {
+		size_t clientFD = accept(socketFD, (struct sockaddr*)&client, &clientLen);
+		pid_t pid;
+		if ((pid = fork()) == 0) {
+			handleConnection(clientFD);
+			exit(0);
+		} else if (pid != -1) {
+			close(clientFD);
+		} else {
+			perror("Fork: ");
+			exit(1);
+		}
+	}
 
-    close(socketFD);
+	close(socketFD);
 
-    return 0;
+	return 0;
 }
