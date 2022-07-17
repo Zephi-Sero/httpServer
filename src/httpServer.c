@@ -49,7 +49,12 @@
  */
 
 #define PORT 8080
-#define MAXIMUM_REQUEST_SIZE 1024
+/* This limits the maximum amount of request that can be read */
+#define MAXIMUM_REQUEST_SIZE 1024*2
+/* This is the limit on how long path you can request like:
+ * http://cool.website/path/to/file.txt
+ */
+#define MAXIMUM_REQUEST_LOCATION_SIZE 1024
 
 #define REPLY_200 "HTTP/1.0 200 OK\r\n"
 #define REPLY_404 "HTTP/1.0 404 Not Found\r\n\r\n<html>\n\t<body>\n\t\t<h1>404 Not Found</h1>\n\t</body>\n</html>"
@@ -58,7 +63,7 @@
 #define END  "\r\n"
 
 void rstripWhitespace(char *data) {
-	int i = strlen(data);
+	unsigned int i = strlen(data);
 	char t = data[i-1];
 	if ((t == ' ') || (t == '\r') || (t == '\n')) {
 		int cont = 1;
@@ -85,15 +90,19 @@ char *getMimeType(char *location) {
 	if (output == NULL)
 		return "";
 
-	for (int i = 0;i < sizeof(mTypes)/sizeof(mimeType);i++) {
+	for (unsigned int i = 0;i < sizeof(mTypes)/sizeof(mimeType);i++) {
 		if (strcmp(output,mTypes[i].Extension) == 0) {
-			return (char *)mTypes[i].Type;
+			size_t limit = strlen(mTypes[i].Type)+strlen("Content-Type: ")+1;
+			char *type = calloc(limit,sizeof(char));
+			strncat(type,"Content-Type: ",limit);
+			strncat(type,mTypes[i].Type,limit);
+			return type;
 		}
 	}
 	return "";
 }
 
-void handleConnection(size_t clientFD) {
+void handleConnection(int clientFD) {
 	char *requestData = calloc(MAXIMUM_REQUEST_SIZE,sizeof(char));
 
 	recv(clientFD, requestData, MAXIMUM_REQUEST_SIZE, 0);
@@ -106,19 +115,19 @@ void handleConnection(size_t clientFD) {
 		return;
 	}
 	if ((strcmp(data,"GET") == 0) || (strcmp(data,"HEAD") == 0)) {
-		int headState = 0;
+		short int headState = 0;
 		if (strcmp(data,"HEAD") == 0)
 			headState = 1;
-		char *data = strtok(NULL," ");
+		data = strtok(NULL," ");
 		rstripWhitespace(data);
 
-		char  *location = calloc(1024,sizeof(char));
+		char  *location = calloc(MAXIMUM_REQUEST_LOCATION_SIZE,sizeof(char));
 		if (strcmp(data,"/") == 0) {
 			/* Redirect / to index.html */
-			strcat(location,"./index.html");
+			strncat(location,"./index.html", MAXIMUM_REQUEST_LOCATION_SIZE);
 		} else {
 			/* Prepend a ./ just incase they try doing a funny */
-			sprintf(location,"./%s",data);
+			snprintf(location,MAXIMUM_REQUEST_LOCATION_SIZE, "./%s",data);
 
 			/* This strips any possible .. comedy */
 			char *temp;
@@ -129,7 +138,7 @@ void handleConnection(size_t clientFD) {
 
 			/* Check if the last character is / and redirect to index.html */
 			if (location[strlen(location)] == '/') {
-				strcat(location,"./index.html");
+				strncat(location,"./index.html", MAXIMUM_REQUEST_LOCATION_SIZE);
 			}
 		}
 
@@ -144,28 +153,29 @@ void handleConnection(size_t clientFD) {
 			free(location);
 			return;
 		}
-		char *buffer;
+		char *buffer = NULL;
 		if (headState == 0) {
-			buffer = calloc(st.st_size+1,sizeof(char));
-			fread(buffer,sizeof(char),st.st_size,file);
+			buffer = calloc((uint64_t)st.st_size+1,sizeof(char));
+			fread(buffer,sizeof(char),(size_t)st.st_size,file);
 			fclose(file);
 		}
 
 		char *mime = getMimeType(location);
 		/* Reuse the location buffer to store the Content-Length header */
-		sprintf(location, "Content-Length: %lu\r\n",st.st_size);
+		snprintf(location, MAXIMUM_REQUEST_LOCATION_SIZE,"Content-Length: %lu\r\n",st.st_size);
 
 		send(clientFD,REPLY_200,strlen(REPLY_200),MSG_MORE);
 		send(clientFD,location,strlen(location),MSG_MORE);
 		send(clientFD,mime,strlen(mime),MSG_MORE);
 		if (headState == 0) {
 			send(clientFD,END,strlen(END),MSG_MORE);
-			send(clientFD,buffer,st.st_size,0);
+			send(clientFD,buffer,(size_t)st.st_size,0);
 		} else {
 			send(clientFD,END,strlen(END),0);
 		}
 		free(buffer);
 		free(location);
+		free(mime);
 		close(clientFD);
 
 	} else {
@@ -173,6 +183,7 @@ void handleConnection(size_t clientFD) {
 		close(clientFD);
 	}
 	free(requestData);
+	close(clientFD);
 }
 
 int main() {
@@ -181,14 +192,14 @@ int main() {
 	struct sockaddr_in serverAddr;
 
 	socketFD = socket(AF_INET, SOCK_STREAM, 0);
- 
+
 	{ /* I do not wish to dirty my code with this but alas it is needed */
 		int optVal = 1;
 		setsockopt(socketFD, SOL_SOCKET, SO_REUSEADDR, (void *)&optVal, sizeof(optVal));
 	}
 
-	serverAddr.sin_family	  = AF_INET;
-	serverAddr.sin_port		= htons(PORT);
+	serverAddr.sin_family      = AF_INET;
+	serverAddr.sin_port        = htons(PORT);
 	serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
 
 	if ((bind(socketFD, (struct sockaddr*)&serverAddr, sizeof(serverAddr))) != 0) {
@@ -204,11 +215,10 @@ int main() {
 	struct sockaddr_in client;
 	socklen_t clientLen = sizeof(client);
 
-	/* Ignore when a child exits as we do not care about its return value */
 	signal(SIGCHLD,SIG_IGN);
 
 	while (1) {
-		size_t clientFD = accept(socketFD, (struct sockaddr*)&client, &clientLen);
+		int clientFD = accept(socketFD, (struct sockaddr*)&client, &clientLen);
 		pid_t pid;
 		if ((pid = fork()) == 0) {
 			handleConnection(clientFD);

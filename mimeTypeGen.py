@@ -1,4 +1,5 @@
 #!/bin/env python3
+# Changed this to add or remove mime types you want or dont want
 
 import sys
 
@@ -20,9 +21,11 @@ const mimeType mTypes[] = {
 
 """
 
-template = "	{\"{1}\",\"Content-Type: {2}\\r\\n\"},"
+template = "	{\"{1}\",\"{2}\\r\\n\"},"
 
 print(base)
+
+
 
 for line in fullfile:
 	if line[0] == '#':
