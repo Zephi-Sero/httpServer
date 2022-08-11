@@ -6,6 +6,7 @@ char const *const Type;
 
 const mimeType mTypes[] = {
 
+
 	{"a2l","application/A2L\r\n"},
 	{"aml","application/AML\r\n"},
 	{"ez","application/andrew-inset\r\n"},

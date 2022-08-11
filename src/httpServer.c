@@ -57,13 +57,30 @@
 #define MAXIMUM_REQUEST_LOCATION_SIZE 1024
 
 #define REPLY_200 "HTTP/1.0 200 OK\r\n"
-#define REPLY_404 "HTTP/1.0 404 Not Found\r\n\r\n<html>\n\t<body>\n\t\t<h1>404 Not Found</h1>\n\t</body>\n</html>"
-#define REPLY_501 "HTTP/1.0 501 Not Implemented\r\n\r\n<html>\n\t<body>\n\t\t<h1>500 Not Implemented</h1>\n\t</body>\n</html>"
 
-#define END  "\r\n"
+#define REPLY_400  \
+	"HTTP/1.0 400 Bad Request\r\n" \
+	"<html>\n\t<body>\n\t\t<h1>400 Bad Request</h1>\n\t</body>\n</html>"
+
+#define REPLY_404 \
+	"HTTP/1.0 404 Not Found\r\n\r\n" \
+	"<html>\n\t<body>\n\t\t<h1>404 Not Found</h1>\n\t</body>\n</html>"
+
+#define REPLY_500 \
+	"HTTP/1.0 500 Internal Server Error\r\n\r\n" \
+	"<html>\n\t<body>\n\t\t<h1>500 Internal Server Error.</h1>\n\t\tPlease try again\n\t</body>\n</html>"
+
+#define REPLY_501 \
+	"HTTP/1.0 501 Not Implemented\r\n\r\n" \
+	"<html>\n\t<body>\n\t\t<h1>501 Not Implemented</h1>\n\t</body>\n</html>"
+
+#define END "\r\n"
 
 void rstripWhitespace(char *data) {
-	unsigned int i = strlen(data);
+	/* The data is from a subsection of a request so limit
+	 * it to the maximum size of a request
+	 */
+	unsigned int i = strnlen(data,MAXIMUM_REQUEST_SIZE);
 	char t = data[i-1];
 	if ((t == ' ') || (t == '\r') || (t == '\n')) {
 		int cont = 1;
@@ -91,9 +108,11 @@ char *getMimeType(char *location) {
 		return "";
 
 	for (unsigned int i = 0;i < sizeof(mTypes)/sizeof(mimeType);i++) {
-		if (strcmp(output,mTypes[i].Extension) == 0) {
-			size_t limit = strlen(mTypes[i].Type)+strlen("Content-Type: ")+1;
-			char *type = calloc(limit,sizeof(char));
+		if (strncmp(output,mTypes[i].Extension,64) == 0) {
+			/* More padding than needed but yea */
+			size_t limit = strnlen(mTypes[i].Type,512)+32;
+			/* Add an extra byte so we always have a null terminator */
+			char *type = calloc(limit+1,sizeof(char));
 			strncat(type,"Content-Type: ",limit);
 			strncat(type,mTypes[i].Type,limit);
 			return type;
@@ -107,22 +126,24 @@ void handleConnection(int clientFD) {
 
 	recv(clientFD, requestData, MAXIMUM_REQUEST_SIZE, 0);
 
-	char *data = strtok(requestData," ");
+	char *tokState = NULL;
+	char *data = strtok_r(requestData," ",&tokState);
 	if (data == NULL) {
-		send(clientFD,REPLY_404,strlen(REPLY_404),0);
-		free(requestData);
+		send(clientFD,REPLY_400,sizeof(REPLY_400)-1,0);
 		close(clientFD);
+		free(requestData);
 		return;
 	}
-	if ((strcmp(data,"GET") == 0) || (strcmp(data,"HEAD") == 0)) {
-		short int headState = 0;
-		if (strcmp(data,"HEAD") == 0)
+
+	if ((strncmp(data,"GET",4) == 0) || (strncmp(data,"HEAD",5) == 0)) {
+		uint8_t headState = 0;
+		if (strncmp(data,"HEAD",5) == 0)
 			headState = 1;
-		data = strtok(NULL," ");
+		data = strtok_r(NULL," ",&tokState);
 		rstripWhitespace(data);
 
-		char  *location = calloc(MAXIMUM_REQUEST_LOCATION_SIZE,sizeof(char));
-		if (strcmp(data,"/") == 0) {
+		char *location = calloc(MAXIMUM_REQUEST_LOCATION_SIZE+1,sizeof(char));
+		if (strncmp(data,"/",2) == 0) {
 			/* Redirect / to index.html */
 			strncat(location,"./index.html", MAXIMUM_REQUEST_LOCATION_SIZE);
 		} else {
@@ -143,19 +164,38 @@ void handleConnection(int clientFD) {
 		}
 
 		struct stat st;
-		stat(location, &st);
-
-		FILE *file = fopen(location,"r");
-		if (file == NULL) {
-			send(clientFD,REPLY_404,strlen(REPLY_404),0);
+		/* If stat() errors assume the file does not exist */
+		if (stat(location, &st) == -1) {
+			send(clientFD,REPLY_404,sizeof(REPLY_404)-1,0);
 			close(clientFD);
 			free(requestData);
 			free(location);
 			return;
 		}
+
+		/* If this returns null its most likely an
+		 * internal error as the stat check passed
+		 */
+		FILE *file = fopen(location,"r");
+		if (file == NULL) {
+			send(clientFD,REPLY_500,sizeof(REPLY_500)-1,0);
+			close(clientFD);
+			free(requestData);
+			free(location);
+			return;
+		}
+
 		char *buffer = NULL;
 		if (headState == 0) {
 			buffer = calloc((uint64_t)st.st_size+1,sizeof(char));
+			/* If we cannot allocate the buffer thats an internal server error */
+			if (buffer == NULL) {
+				send(clientFD,REPLY_500,sizeof(REPLY_500)-1,0);
+				close(clientFD);
+				free(requestData);
+				free(location);
+				return;
+			}
 			fread(buffer,sizeof(char),(size_t)st.st_size,file);
 			fclose(file);
 		}
@@ -164,26 +204,30 @@ void handleConnection(int clientFD) {
 		/* Reuse the location buffer to store the Content-Length header */
 		snprintf(location, MAXIMUM_REQUEST_LOCATION_SIZE,"Content-Length: %lu\r\n",st.st_size);
 
-		send(clientFD,REPLY_200,strlen(REPLY_200),MSG_MORE);
+		send(clientFD,REPLY_200,sizeof(REPLY_200)-1,MSG_MORE);
 		send(clientFD,location,strlen(location),MSG_MORE);
 		send(clientFD,mime,strlen(mime),MSG_MORE);
 		if (headState == 0) {
-			send(clientFD,END,strlen(END),MSG_MORE);
+			send(clientFD,END,sizeof(END)-1,MSG_MORE);
 			send(clientFD,buffer,(size_t)st.st_size,0);
 		} else {
-			send(clientFD,END,strlen(END),0);
+			send(clientFD,END,sizeof(END)-1,0);
 		}
+
+		close(clientFD);
 		free(buffer);
 		free(location);
 		free(mime);
-		close(clientFD);
+		free(requestData);
+		return;
 
 	} else {
-		send(clientFD,REPLY_501,strlen(REPLY_501),0);
+		send(clientFD,REPLY_501,sizeof(REPLY_501)-1,0);
 		close(clientFD);
 	}
-	free(requestData);
+
 	close(clientFD);
+	free(requestData);
 }
 
 int main() {
@@ -227,7 +271,8 @@ int main() {
 			close(clientFD);
 		} else {
 			perror("Fork: ");
-			exit(1);
+			send(clientFD,REPLY_500,sizeof(REPLY_500)-1,0);
+			close(clientFD);
 		}
 	}
 

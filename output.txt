@@ -1,0 +1,9 @@
+HTTP/1.0 200 OK
+Content-Length: 50
+Content-Type: text/html
+
+<html>
+	<body>
+		<h1>Hello!</h1>
+	</body>
+</html>
