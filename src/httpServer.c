@@ -78,44 +78,44 @@
 
 #define END "\r\n"
 
-void r_strip_whitespace(char *data)
+void r_strip_whitespace(char *const data)
 {
 	// The data is from a subsection of a request so limit
 	// it to the maximum size of a request
 	unsigned int i = strnlen(data, MAXIMUM_REQUEST_SIZE);
-	char t = data[i-1];
+	char const t = data[i-1];
 	if ((t == ' ') || (t == '\r') || (t == '\n')) {
-		int cont = 1;
-		while (cont) {
+		while (1) {
 			switch (data[i]) {
 			case ' ':
 			case '\r':
 			case '\n':
 				i--;
-				break;
-
+				// Continue looping, whitespace might still exist
+				continue;
 			default:
-				cont = 0;
+				// Fall out of the switch, then out of the loop
 				break;
 			}
+			break;
 		}
 		data[i - 1] = 0;
 	}
 }
 
-char *get_mime_type(char *location)
+char *get_mime_type(char const *const location)
 {
 
-	char *output = strrchr(location, '.') + 1;
+	char const *const output = strrchr(location, '.') + 1;
 	if (output == NULL)
 		return "";
 
 	for (unsigned int i = 0; i < sizeof(mTypes) / sizeof(mimeType); i++) {
 		if (strncmp(output, mTypes[i].Extension, 64) == 0) {
 			// More padding than needed but yea
-			size_t limit = strnlen(mTypes[i].Type, 512) + 32;
+			size_t const limit = strnlen(mTypes[i].Type, 512) + 32;
 			// Add an extra byte so we always have a null terminator
-			char *type = calloc(limit + 1, sizeof(char));
+			char *const type = calloc(limit + 1, sizeof(char));
 			strncat(type, "Content-Type: ", limit);
 			strncat(type, mTypes[i].Type, limit);
 			return type;
@@ -124,9 +124,9 @@ char *get_mime_type(char *location)
 	return "";
 }
 
-void handle_connection(int clientFD)
+void handle_connection(int const clientFD)
 {
-	char *requestData = calloc(MAXIMUM_REQUEST_SIZE + 1, sizeof(char));
+	char *const requestData = calloc(MAXIMUM_REQUEST_SIZE + 1, sizeof(char));
 
 	recv(clientFD, requestData, MAXIMUM_REQUEST_SIZE, 0);
 
@@ -146,7 +146,7 @@ void handle_connection(int clientFD)
 		data = strtok_r(NULL," ", &tokState);
 		r_strip_whitespace(data);
 
-		char *location = calloc(MAXIMUM_REQUEST_LOCATION_SIZE + 1, sizeof(char));
+		char *const location = calloc(MAXIMUM_REQUEST_LOCATION_SIZE + 1, sizeof(char));
 		if (strncmp(data, "/", 2) == 0) {
 			// Redirect / to index.html
 			strncat(location,"./index.html", MAXIMUM_REQUEST_LOCATION_SIZE);
@@ -179,7 +179,7 @@ void handle_connection(int clientFD)
 
 		// If this returns null its most likely an
 		// internal error as the stat check passed
-		FILE *file = fopen(location,"r");
+		FILE *const file = fopen(location,"r");
 		if (file == NULL) {
 			send(clientFD, REPLY_500, sizeof(REPLY_500) - 1, 0);
 			close(clientFD);
@@ -203,7 +203,7 @@ void handle_connection(int clientFD)
 			fclose(file);
 		}
 
-		char *mime = get_mime_type(location);
+		char *const mime = get_mime_type(location);
 		// Reuse the location buffer to store the Content-Length header
 		snprintf(location, MAXIMUM_REQUEST_LOCATION_SIZE,
 				"Content-Length: %lu\r\n", st.st_size);
@@ -237,21 +237,20 @@ void handle_connection(int clientFD)
 int main()
 {
 
-	int socketFD;
-	struct sockaddr_in serverAddr;
-
-	socketFD = socket(AF_INET, SOCK_STREAM, 0);
+	int const socketFD = socket(AF_INET, SOCK_STREAM, 0);
 
 	{ // I do not wish to dirty my code with this but alas it is needed
-		int optVal = 1;
-		setsockopt(socketFD, SOL_SOCKET, SO_REUSEADDR, (void *)&optVal, sizeof(optVal));
+		int const optVal = 1;
+		setsockopt(socketFD, SOL_SOCKET, SO_REUSEADDR, (void const*)&optVal, sizeof(optVal));
 	}
 
-	serverAddr.sin_family      = AF_INET;
-	serverAddr.sin_port        = htons(PORT);
-	serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+	struct sockaddr_in const serverAddr = {
+		.sin_family = AF_INET,
+		.sin_port   = htons(PORT),
+		.sin_addr.s_addr = htonl(INADDR_ANY)
+	};
 
-	if (bind(socketFD, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) != 0) {
+	if (bind(socketFD, (struct sockaddr const*)&serverAddr, sizeof(serverAddr)) != 0) {
 		perror("Socket binding failed");
 		exit(1);
 	}
@@ -261,21 +260,21 @@ int main()
 		exit(1);
 	}
 
-	struct sockaddr_in client;
-	socklen_t clientLen = sizeof(client);
+	socklen_t clientLen = sizeof(struct sockaddr_in);
 
 	signal(SIGCHLD,SIG_IGN);
 
 	while (1) {
-		int clientFD = accept(socketFD, (struct sockaddr*)&client, &clientLen);
-		pid_t pid;
-		if ((pid = fork()) == 0) {
+		struct sockaddr_in client;
+		int const clientFD = accept(socketFD, (struct sockaddr *)&client, &clientLen);
+		pid_t const pid = fork();
+		if (pid == 0) {
 			handle_connection(clientFD);
 			exit(0);
 		} else if (pid != -1) {
 			close(clientFD);
 		} else {
-			perror("Fork: ");
+			perror("Fork");
 			send(clientFD, REPLY_500, sizeof(REPLY_500) - 1, 0);
 			close(clientFD);
 		}
