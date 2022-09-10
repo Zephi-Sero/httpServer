@@ -77,29 +77,19 @@
 
 #define END "\r\n"
 
-void r_strip_whitespace(char *const data)
+void trim_right_whitespace(char *const data)
 {
 	// The data is from a subsection of a request so limit
 	// it to the maximum size of a request
-	unsigned int i = strnlen(data, MAXIMUM_REQUEST_SIZE);
-	char const t = data[i-1];
-	if ((t == ' ') || (t == '\r') || (t == '\n')) {
-		while (1) {
-			switch (data[i]) {
-			case ' ':
-			case '\r':
-			case '\n':
-				i--;
-				// Continue looping, whitespace might still exist
-				continue;
-			default:
-				// Fall out of the switch, then out of the loop
-				break;
-			}
+	unsigned int len = strnlen(data, MAXIMUM_REQUEST_SIZE);
+	unsigned int i;
+	for (i = len - 1; i >= 0; i--) {
+		char const ch = data[i];
+		if (!(ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n'))
 			break;
-		}
-		data[i - 1] = 0;
 	}
+	if (i < len - 1)
+		data[i + 1] = '\0';
 }
 
 char *get_mime_type(char const *const location)
@@ -143,7 +133,7 @@ void handle_connection(int const clientFD)
 		if (strncmp(data, "HEAD", 5) == 0)
 			headState = 1;
 		data = strtok_r(NULL," ", &tokState);
-		r_strip_whitespace(data);
+		trim_right_whitespace(data);
 
 		char *const location = calloc(MAXIMUM_REQUEST_LOCATION_SIZE + 1, sizeof(char));
 		if (strncmp(data, "/", 2) == 0) {
