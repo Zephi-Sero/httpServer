@@ -48,8 +48,8 @@
  * For more information, please refer to <http://unlicense.org/>
  */
 
-
 #define PORT 8080
+
 // This limits the maximum amount of request that can be read
 #define MAXIMUM_REQUEST_SIZE 1024 * 2
 
