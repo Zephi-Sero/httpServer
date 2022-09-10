@@ -85,19 +85,19 @@ void r_strip_whitespace(char *const data)
 	unsigned int i = strnlen(data, MAXIMUM_REQUEST_SIZE);
 	char const t = data[i-1];
 	if ((t == ' ') || (t == '\r') || (t == '\n')) {
-		int cont = 1;
-		while (cont) {
+		while (1) {
 			switch (data[i]) {
 			case ' ':
 			case '\r':
 			case '\n':
 				i--;
-				break;
-
+				// Continue looping, whitespace might still exist
+				continue;
 			default:
-				cont = 0;
+				// Fall out of the switch, then out of the loop
 				break;
 			}
+			break;
 		}
 		data[i - 1] = 0;
 	}
