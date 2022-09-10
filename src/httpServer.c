@@ -1,4 +1,3 @@
-#include "mimeTypes.h"
 /* mimeTypes.h contains:
  *
  * typedef struct {
@@ -11,16 +10,16 @@
  *	 // This goes on for quite some time with various mime types
  * };
  */
+#include "mimeTypes.h"
 
-#include <unistd.h>
 #include <arpa/inet.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
-
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
+#include <unistd.h>
 
 /* This is free and unencumbered software released into the public domain.
  *
@@ -51,7 +50,7 @@
 #define PORT 8080
 
 // This limits the maximum amount of request that can be read
-#define MAXIMUM_REQUEST_SIZE 1024 * 2
+#define MAXIMUM_REQUEST_SIZE (1024 * 2)
 
 // This is the limit on how long path you can request like:
 // http://cool.website/path/to/file.txt
@@ -270,6 +269,7 @@ int main()
 		pid_t const pid = fork();
 		if (pid == 0) {
 			handle_connection(clientFD);
+			close(socketFD);
 			exit(0);
 		} else if (pid != -1) {
 			close(clientFD);
