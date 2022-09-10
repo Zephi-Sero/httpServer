@@ -94,13 +94,15 @@ void trim_right_whitespace(char *const data)
 
 char *get_mime_type(char const *const location)
 {
-
-	char const *const output = strrchr(location, '.') + 1;
-	if (output == NULL)
+	// Get position of file extension ("main.txt" -> ".txt")
+	char const *extension = strrchr(location, '.');
+	if (extension == NULL)
 		return "";
+	// Skip over the . character. ("txt")
+	extension += 1;
 
 	for (unsigned int i = 0; i < sizeof(mTypes) / sizeof(mimeType); i++) {
-		if (strncmp(output, mTypes[i].Extension, 64) == 0) {
+		if (strncmp(extension, mTypes[i].Extension, 64) == 0) {
 			// More padding than needed but yea
 			size_t const limit = strnlen(mTypes[i].Type, 512) + 32;
 			// Add an extra byte so we always have a null terminator
