@@ -1,11 +1,26 @@
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
+#include "mimeTypes.h"
+/* mimeTypes.h contains:
+ *
+ * typedef struct {
+ *	 char const *const Extension;
+ *	 char const *const Type;
+ * } mimeType;
+ *
+ * const mimeType mTypes[] = {
+ *	 {"html","Content-Type: text/html\r\n"},
+ *	 // This goes on for quite some time with various mime types
+ * };
+ */
+
 #include <unistd.h>
+#include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
-#include <arpa/inet.h>
+
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 
 /* This is free and unencumbered software released into the public domain.
  *
@@ -33,27 +48,13 @@
  * For more information, please refer to <http://unlicense.org/>
  */
 
-#include "mimeTypes.h"
-/* mimeTypes.h contains:
- *
- * typedef struct {
- *	 char const *const Extension;
- *	 char const *const Type;
- * } mimeType;
- *
- * const mimeType mTypes[] = {
- *	 {"html","Content-Type: text/html\r\n"},
- *	 // This goes on for quite some time with various mime types
- * };
- *
- */
 
 #define PORT 8080
-/* This limits the maximum amount of request that can be read */
-#define MAXIMUM_REQUEST_SIZE 1024*2
-/* This is the limit on how long path you can request like:
- * http://cool.website/path/to/file.txt
- */
+// This limits the maximum amount of request that can be read
+#define MAXIMUM_REQUEST_SIZE 1024 * 2
+
+// This is the limit on how long path you can request like:
+// http://cool.website/path/to/file.txt
 #define MAXIMUM_REQUEST_LOCATION_SIZE 1024
 
 #define REPLY_200 "HTTP/1.0 200 OK\r\n"
@@ -68,7 +69,8 @@
 
 #define REPLY_500 \
 	"HTTP/1.0 500 Internal Server Error\r\n\r\n" \
-	"<html>\n\t<body>\n\t\t<h1>500 Internal Server Error.</h1>\n\t\tPlease try again\n\t</body>\n</html>"
+	"<html>\n\t<body>\n\t\t<h1>500 Internal Server Error.</h1>\n\t\t" \
+	"Please try again\n\t</body>\n</html>"
 
 #define REPLY_501 \
 	"HTTP/1.0 501 Not Implemented\r\n\r\n" \
@@ -76,109 +78,110 @@
 
 #define END "\r\n"
 
-void rstripWhitespace(char *data) {
-	/* The data is from a subsection of a request so limit
-	 * it to the maximum size of a request
-	 */
-	unsigned int i = strnlen(data,MAXIMUM_REQUEST_SIZE);
+void r_strip_whitespace(char *data)
+{
+	// The data is from a subsection of a request so limit
+	// it to the maximum size of a request
+	unsigned int i = strnlen(data, MAXIMUM_REQUEST_SIZE);
 	char t = data[i-1];
 	if ((t == ' ') || (t == '\r') || (t == '\n')) {
 		int cont = 1;
 		while (cont) {
 			switch (data[i]) {
-				case ' ':
-				case '\r':
-				case '\n':
-					i--;
-					break;
+			case ' ':
+			case '\r':
+			case '\n':
+				i--;
+				break;
 
-				default:
-					cont = 0;
-					break;
+			default:
+				cont = 0;
+				break;
 			}
 		}
-		data[i-1] = 0;
+		data[i - 1] = 0;
 	}
 }
 
-char *getMimeType(char *location) {
+char *get_mime_type(char *location)
+{
 
-	char *output = strrchr(location, '.')+1;
+	char *output = strrchr(location, '.') + 1;
 	if (output == NULL)
 		return "";
 
-	for (unsigned int i = 0;i < sizeof(mTypes)/sizeof(mimeType);i++) {
-		if (strncmp(output,mTypes[i].Extension,64) == 0) {
-			/* More padding than needed but yea */
-			size_t limit = strnlen(mTypes[i].Type,512)+32;
-			/* Add an extra byte so we always have a null terminator */
-			char *type = calloc(limit+1,sizeof(char));
-			strncat(type,"Content-Type: ",limit);
-			strncat(type,mTypes[i].Type,limit);
+	for (unsigned int i = 0; i < sizeof(mTypes) / sizeof(mimeType); i++) {
+		if (strncmp(output, mTypes[i].Extension, 64) == 0) {
+			// More padding than needed but yea
+			size_t limit = strnlen(mTypes[i].Type, 512) + 32;
+			// Add an extra byte so we always have a null terminator
+			char *type = calloc(limit + 1, sizeof(char));
+			strncat(type, "Content-Type: ", limit);
+			strncat(type, mTypes[i].Type, limit);
 			return type;
 		}
 	}
 	return "";
 }
 
-void handleConnection(int clientFD) {
-	char *requestData = calloc(MAXIMUM_REQUEST_SIZE,sizeof(char));
+void handle_connection(int clientFD)
+{
+	char *requestData = calloc(MAXIMUM_REQUEST_SIZE + 1, sizeof(char));
 
 	recv(clientFD, requestData, MAXIMUM_REQUEST_SIZE, 0);
 
 	char *tokState = NULL;
-	char *data = strtok_r(requestData," ",&tokState);
+	char *data = strtok_r(requestData, " ", &tokState);
 	if (data == NULL) {
-		send(clientFD,REPLY_400,sizeof(REPLY_400)-1,0);
+		send(clientFD, REPLY_400, sizeof(REPLY_400)-1, 0);
 		close(clientFD);
 		free(requestData);
 		return;
 	}
 
-	if ((strncmp(data,"GET",4) == 0) || (strncmp(data,"HEAD",5) == 0)) {
+	if ((strncmp(data, "GET", 4) == 0) || (strncmp(data, "HEAD", 5) == 0)) {
 		uint8_t headState = 0;
-		if (strncmp(data,"HEAD",5) == 0)
+		if (strncmp(data, "HEAD", 5) == 0)
 			headState = 1;
-		data = strtok_r(NULL," ",&tokState);
-		rstripWhitespace(data);
+		data = strtok_r(NULL," ", &tokState);
+		r_strip_whitespace(data);
 
-		char *location = calloc(MAXIMUM_REQUEST_LOCATION_SIZE+1,sizeof(char));
-		if (strncmp(data,"/",2) == 0) {
-			/* Redirect / to index.html */
+		char *location = calloc(MAXIMUM_REQUEST_LOCATION_SIZE + 1, sizeof(char));
+		if (strncmp(data, "/", 2) == 0) {
+			// Redirect / to index.html
 			strncat(location,"./index.html", MAXIMUM_REQUEST_LOCATION_SIZE);
 		} else {
-			/* Prepend a ./ just incase they try doing a funny */
-			snprintf(location,MAXIMUM_REQUEST_LOCATION_SIZE, "./%s",data);
+			// Prepend a ./ just incase they try doing a funny
+			snprintf(location, MAXIMUM_REQUEST_LOCATION_SIZE, "./%s", data);
 
-			/* This strips any possible .. comedy */
+			// This strips any possible .. comedy
 			char *temp;
-			while ((temp = strstr(location,"..")) != NULL) {
+			while ((temp = strstr(location, "..")) != NULL) {
 				temp[0] = '.';
 				temp[1] = '/';
 			}
 
-			/* Check if the last character is / and redirect to index.html */
+			// Check if the last character is / and redirect to index.html
 			if (location[strlen(location)] == '/') {
-				strncat(location,"./index.html", MAXIMUM_REQUEST_LOCATION_SIZE);
+				strncat(location, "./index.html", MAXIMUM_REQUEST_LOCATION_SIZE);
 			}
 		}
 
 		struct stat st;
-		/* If stat() errors assume the file does not exist */
+		// If stat() errors assume the file does not exist
 		if (stat(location, &st) == -1) {
-			send(clientFD,REPLY_404,sizeof(REPLY_404)-1,0);
+			send(clientFD, REPLY_404, sizeof(REPLY_404) - 1, 0);
 			close(clientFD);
 			free(requestData);
 			free(location);
 			return;
 		}
 
-		/* If this returns null its most likely an
-		 * internal error as the stat check passed
-		 */
+		// If this returns null its most likely an
+		// internal error as the stat check passed
 		FILE *file = fopen(location,"r");
 		if (file == NULL) {
-			send(clientFD,REPLY_500,sizeof(REPLY_500)-1,0);
+			send(clientFD, REPLY_500, sizeof(REPLY_500) - 1, 0);
 			close(clientFD);
 			free(requestData);
 			free(location);
@@ -187,31 +190,32 @@ void handleConnection(int clientFD) {
 
 		char *buffer = NULL;
 		if (headState == 0) {
-			buffer = calloc((uint64_t)st.st_size+1,sizeof(char));
-			/* If we cannot allocate the buffer thats an internal server error */
+			buffer = calloc((uint64_t)st.st_size+1, sizeof(char));
+			// If we cannot allocate the buffer thats an internal server error
 			if (buffer == NULL) {
-				send(clientFD,REPLY_500,sizeof(REPLY_500)-1,0);
+				send(clientFD, REPLY_500, sizeof(REPLY_500) - 1, 0);
 				close(clientFD);
 				free(requestData);
 				free(location);
 				return;
 			}
-			fread(buffer,sizeof(char),(size_t)st.st_size,file);
+			fread(buffer, sizeof(char), (size_t)st.st_size, file);
 			fclose(file);
 		}
 
-		char *mime = getMimeType(location);
-		/* Reuse the location buffer to store the Content-Length header */
-		snprintf(location, MAXIMUM_REQUEST_LOCATION_SIZE,"Content-Length: %lu\r\n",st.st_size);
+		char *mime = get_mime_type(location);
+		// Reuse the location buffer to store the Content-Length header
+		snprintf(location, MAXIMUM_REQUEST_LOCATION_SIZE,
+				"Content-Length: %lu\r\n", st.st_size);
 
-		send(clientFD,REPLY_200,sizeof(REPLY_200)-1,MSG_MORE);
-		send(clientFD,location,strlen(location),MSG_MORE);
-		send(clientFD,mime,strlen(mime),MSG_MORE);
+		send(clientFD, REPLY_200, sizeof(REPLY_200) - 1, MSG_MORE);
+		send(clientFD, location,  strlen(location),      MSG_MORE);
+		send(clientFD, mime,      strlen(mime),          MSG_MORE);
 		if (headState == 0) {
-			send(clientFD,END,sizeof(END)-1,MSG_MORE);
-			send(clientFD,buffer,(size_t)st.st_size,0);
+			send(clientFD, END, sizeof(END) - 1, MSG_MORE);
+			send(clientFD, buffer, (size_t)st.st_size, 0);
 		} else {
-			send(clientFD,END,sizeof(END)-1,0);
+			send(clientFD, END, sizeof(END) - 1, 0);
 		}
 
 		close(clientFD);
@@ -222,7 +226,7 @@ void handleConnection(int clientFD) {
 		return;
 
 	} else {
-		send(clientFD,REPLY_501,sizeof(REPLY_501)-1,0);
+		send(clientFD, REPLY_501, sizeof(REPLY_501) - 1, 0);
 		close(clientFD);
 	}
 
@@ -230,14 +234,15 @@ void handleConnection(int clientFD) {
 	free(requestData);
 }
 
-int main() {
+int main()
+{
 
 	int socketFD;
 	struct sockaddr_in serverAddr;
 
 	socketFD = socket(AF_INET, SOCK_STREAM, 0);
 
-	{ /* I do not wish to dirty my code with this but alas it is needed */
+	{ // I do not wish to dirty my code with this but alas it is needed
 		int optVal = 1;
 		setsockopt(socketFD, SOL_SOCKET, SO_REUSEADDR, (void *)&optVal, sizeof(optVal));
 	}
@@ -265,13 +270,13 @@ int main() {
 		int clientFD = accept(socketFD, (struct sockaddr*)&client, &clientLen);
 		pid_t pid;
 		if ((pid = fork()) == 0) {
-			handleConnection(clientFD);
+			handle_connection(clientFD);
 			exit(0);
 		} else if (pid != -1) {
 			close(clientFD);
 		} else {
 			perror("Fork: ");
-			send(clientFD,REPLY_500,sizeof(REPLY_500)-1,0);
+			send(clientFD, REPLY_500, sizeof(REPLY_500) - 1, 0);
 			close(clientFD);
 		}
 	}
