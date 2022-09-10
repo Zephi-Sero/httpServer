@@ -251,12 +251,12 @@ int main()
 	serverAddr.sin_port        = htons(PORT);
 	serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
 
-	if ((bind(socketFD, (struct sockaddr*)&serverAddr, sizeof(serverAddr))) != 0) {
+	if (bind(socketFD, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) != 0) {
 		perror("Socket binding failed");
 		exit(1);
 	}
 
-	if ((listen(socketFD,32)) != 0) {
+	if (listen(socketFD, 32) != 0) {
 		perror("Failed to listen");
 		exit(1);
 	}
