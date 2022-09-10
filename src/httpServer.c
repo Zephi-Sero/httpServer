@@ -270,6 +270,7 @@ int main()
 		pid_t const pid = fork();
 		if (pid == 0) {
 			handle_connection(clientFD);
+			close(socketFD);
 			exit(0);
 		} else if (pid != -1) {
 			close(clientFD);
