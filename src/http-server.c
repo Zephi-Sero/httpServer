@@ -1,16 +1,16 @@
-/* mimeTypes.h contains:
+/* mime-types.h contains:
  *
  * typedef struct {
- *	 char const *const Extension;
- *	 char const *const Type;
- * } mimeType;
+ *	 char const *const extension;
+ *	 char const *const type;
+ * } MimeType;
  *
- * const mimeType mTypes[] = {
+ * MimeType const mimeTypes[] = {
  *	 {"html", "Content-Type: text/html\r\n"},
  *	 // This goes on for quite some time with various mime types
  * };
  */
-#include "mimeTypes.h"
+#include "mime-types.h"
 
 #include <arpa/inet.h>
 #include <limits.h>
@@ -111,14 +111,14 @@ char *get_mime_type(char const *const location)
 	// Skip over the . character. ("txt")
 	extension += 1;
 
-	for (unsigned int i = 0; i < sizeof(mTypes) / sizeof(mimeType); i++) {
-		if (strncmp(extension, mTypes[i].Extension, 64) == 0) {
+	for (unsigned int i = 0; i < sizeof(mimeTypes) / sizeof(MimeType); i++) {
+		if (strncmp(extension, mimeTypes[i].extension, 64) == 0) {
 			// More padding than needed but yea
-			size_t const limit = strnlen(mTypes[i].Type, 512) + 32;
+			size_t const limit = strnlen(mimeTypes[i].type, 512) + 32;
 			// Add an extra byte so we always have a null terminator
 			char *const type = calloc(limit + 1, sizeof(char));
 			strncat(type, "Content-Type: ", limit);
-			strncat(type, mTypes[i].Type, limit);
+			strncat(type, mimeTypes[i].type, limit);
 			return type;
 		}
 	}
