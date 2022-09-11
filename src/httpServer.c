@@ -97,6 +97,8 @@ char *get_mime_type(char const *const location)
 	// Get position of file extension ("main.txt" -> ".txt")
 	char const *extension = strrchr(location, '.');
 	if (extension == NULL)
+		// As per RFC-7231, data with an unknown type should not get a
+		// Content-Type header.
 		return "";
 	// Skip over the . character. ("txt")
 	extension += 1;
@@ -112,6 +114,8 @@ char *get_mime_type(char const *const location)
 			return type;
 		}
 	}
+	// As per RFC-7231, data with an unknown type should not get a
+	// Content-Type header.
 	return "";
 }
 
