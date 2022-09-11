@@ -6,13 +6,15 @@
  * } mimeType;
  *
  * const mimeType mTypes[] = {
- *	 {"html","Content-Type: text/html\r\n"},
+ *	 {"html", "Content-Type: text/html\r\n"},
  *	 // This goes on for quite some time with various mime types
  * };
  */
 #include "mimeTypes.h"
 
 #include <arpa/inet.h>
+#include <limits.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -47,6 +49,10 @@
  * For more information, please refer to <http://unlicense.org/>
  */
 
+
+// Used for error messages
+#define STRING_VALUE(X) #X
+
 #define PORT 8080
 
 // This limits the maximum amount of request that can be read
@@ -56,25 +62,27 @@
 // http://cool.website/path/to/file.txt
 #define MAXIMUM_REQUEST_LOCATION_SIZE 1024
 
+// OK
 #define REPLY_200 "HTTP/1.0 200 OK\r\n"
-
+// Bad Request
 #define REPLY_400  \
 	"HTTP/1.0 400 Bad Request\r\n" \
 	"<html>\n\t<body>\n\t\t<h1>400 Bad Request</h1>\n\t</body>\n</html>"
-
+// Not Found
 #define REPLY_404 \
 	"HTTP/1.0 404 Not Found\r\n\r\n" \
 	"<html>\n\t<body>\n\t\t<h1>404 Not Found</h1>\n\t</body>\n</html>"
-
+// Internal Server Error
 #define REPLY_500 \
 	"HTTP/1.0 500 Internal Server Error\r\n\r\n" \
 	"<html>\n\t<body>\n\t\t<h1>500 Internal Server Error.</h1>\n\t\t" \
 	"Please try again\n\t</body>\n</html>"
-
+// Not Implemented
 #define REPLY_501 \
 	"HTTP/1.0 501 Not Implemented\r\n\r\n" \
 	"<html>\n\t<body>\n\t\t<h1>501 Not Implemented</h1>\n\t</body>\n</html>"
 
+// Sent at the end of the header the server sends to the client.
 #define END "\r\n"
 
 void trim_right_whitespace(char *const data)
@@ -83,7 +91,7 @@ void trim_right_whitespace(char *const data)
 	// it to the maximum size of a request
 	unsigned int len = strnlen(data, MAXIMUM_REQUEST_SIZE);
 	unsigned int i;
-	for (i = len - 1; i >= 0; i--) {
+	for (i = len - 1; i != UINT_MAX; i--) {
 		char const ch = data[i];
 		if (!(ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n'))
 			break;
@@ -122,29 +130,52 @@ char *get_mime_type(char const *const location)
 void handle_connection(int const clientFD)
 {
 	char *const requestData = calloc(MAXIMUM_REQUEST_SIZE + 1, sizeof(char));
+	if (requestData == NULL) {
+		perror("handle_connection(): Failed to allocate requestData");
+		send(clientFD, REPLY_500, sizeof(REPLY_500)-1, 0);
+		close(clientFD);
+		return;
+	}
 
-	recv(clientFD, requestData, MAXIMUM_REQUEST_SIZE, 0);
-
-	char *tokState = NULL;
-	char *data = strtok_r(requestData, " ", &tokState);
-	if (data == NULL) {
-		send(clientFD, REPLY_400, sizeof(REPLY_400)-1, 0);
+	ssize_t const status = recv(clientFD, requestData, MAXIMUM_REQUEST_SIZE, 0);
+	if (status == -1) {
+		perror("handle_connection(): Failed to receive data");
+		send(clientFD, REPLY_500, sizeof(REPLY_500) - 1, 0);
 		close(clientFD);
 		free(requestData);
 		return;
 	}
 
-	if ((strncmp(data, "GET", 4) == 0) || (strncmp(data, "HEAD", 5) == 0)) {
-		uint8_t headState = 0;
-		if (strncmp(data, "HEAD", 5) == 0)
-			headState = 1;
-		data = strtok_r(NULL," ", &tokState);
+	char *tokState = NULL;
+	char *reqType = strtok_r(requestData, " ", &tokState);
+	if (reqType == NULL) {
+		fprintf(stderr, "handle_connection(): Malformed request type: %s\n", requestData);
+		send(clientFD, REPLY_400, sizeof(REPLY_400) - 1, 0);
+		close(clientFD);
+		free(requestData);
+		return;
+	}
+
+	bool headRequest = strncmp(reqType, "HEAD", 5) == 0;
+	bool getRequest = strncmp(reqType, "GET", 4) == 0;
+	if (getRequest || headRequest) {
+		// Get the actual file requested:
+		char *data = strtok_r(NULL, " ", &tokState);
 		trim_right_whitespace(data);
 
 		char *const location = calloc(MAXIMUM_REQUEST_LOCATION_SIZE + 1, sizeof(char));
+		if (location == NULL) {
+			perror("handle_connection(): Failed to allocate location");
+			send(clientFD, REPLY_500, sizeof(REPLY_500) - 1, 0);
+			close(clientFD);
+			free(data);
+			free(requestData);
+			return;
+		}
+
 		if (strncmp(data, "/", 2) == 0) {
 			// Redirect / to index.html
-			strncat(location,"./index.html", MAXIMUM_REQUEST_LOCATION_SIZE);
+			strncat(location, "./index.html", MAXIMUM_REQUEST_LOCATION_SIZE);
 		} else {
 			// Prepend a ./ just incase they try doing a funny
 			snprintf(location, MAXIMUM_REQUEST_LOCATION_SIZE, "./%s", data);
@@ -156,8 +187,9 @@ void handle_connection(int const clientFD)
 				temp[1] = '/';
 			}
 
-			// Check if the last character is / and redirect to index.html
-			if (location[strlen(location)] == '/') {
+			// Check if the last character is / and redirect to that
+			// directory's index.html
+			if (location[strlen(location) - 1] == '/') {
 				strncat(location, "./index.html", MAXIMUM_REQUEST_LOCATION_SIZE);
 			}
 		}
@@ -165,6 +197,8 @@ void handle_connection(int const clientFD)
 		struct stat st;
 		// If stat() errors assume the file does not exist
 		if (stat(location, &st) == -1) {
+			perror("handle_connection(): Could not stat requested file");
+			fprintf(stderr, "File requested: %s\n", location);
 			send(clientFD, REPLY_404, sizeof(REPLY_404) - 1, 0);
 			close(clientFD);
 			free(requestData);
@@ -174,8 +208,10 @@ void handle_connection(int const clientFD)
 
 		// If this returns null its most likely an
 		// internal error as the stat check passed
-		FILE *const file = fopen(location,"r");
+		FILE *const file = fopen(location, "r");
 		if (file == NULL) {
+			perror("handle_connection(): Could not fopen requested file");
+			fprintf(stderr, "File requested: %s\n", location);
 			send(clientFD, REPLY_500, sizeof(REPLY_500) - 1, 0);
 			close(clientFD);
 			free(requestData);
@@ -184,29 +220,57 @@ void handle_connection(int const clientFD)
 		}
 
 		char *buffer = NULL;
-		if (headState == 0) {
-			buffer = calloc((uint64_t)st.st_size+1, sizeof(char));
+		if (!headRequest) {
+			buffer = calloc((uint64_t) st.st_size + 1, sizeof(char));
 			// If we cannot allocate the buffer thats an internal server error
 			if (buffer == NULL) {
+				perror("handle_connection(): Could not allocate file buffer");
+				fprintf(stderr, "File requested: %s\n", location);
 				send(clientFD, REPLY_500, sizeof(REPLY_500) - 1, 0);
 				close(clientFD);
 				free(requestData);
 				free(location);
 				return;
 			}
-			fread(buffer, sizeof(char), (size_t)st.st_size, file);
+			if (fread(buffer, sizeof(char), (size_t) st.st_size, file) != (size_t) st.st_size) {
+				bool foundProblem = false;
+				if (feof(file)) {
+					perror("handle_connection(): fread returned shorter than stat expected");
+					foundProblem = true;
+				}
+				if (ferror(file)) {
+					perror("handle_connection(): fread errored");
+					foundProblem = true;
+				}
+				if (!foundProblem) {
+					perror("handle_connection(): fread had unknown file error without setting feof() or ferror()");
+				}
+				fprintf(stderr, "fread failed for file %s\n", location);
+				// Clean up and don't give the client the
+				// partial data, just in case they found an exploit.
+				fclose(file);
+				send(clientFD, REPLY_500, sizeof(REPLY_500) - 1, 0);
+				close(clientFD);
+				free(buffer);
+				free(requestData);
+				free(location);
+				return;
+			}
 			fclose(file);
 		}
 
 		char *const mime = get_mime_type(location);
-		// Reuse the location buffer to store the Content-Length header
-		snprintf(location, MAXIMUM_REQUEST_LOCATION_SIZE,
+		// Reuse the location buffer to store the Content-Length header,
+		// to prevent a second alloc. Assigned to new variable name so
+		// it still makes sense.
+		char *const header = location;
+		snprintf(header, MAXIMUM_REQUEST_LOCATION_SIZE,
 				"Content-Length: %lu\r\n", st.st_size);
 
 		send(clientFD, REPLY_200, sizeof(REPLY_200) - 1, MSG_MORE);
-		send(clientFD, location,  strlen(location),      MSG_MORE);
+		send(clientFD, header,    strlen(location),      MSG_MORE);
 		send(clientFD, mime,      strlen(mime),          MSG_MORE);
-		if (headState == 0) {
+		if (!headRequest) {
 			send(clientFD, END, sizeof(END) - 1, MSG_MORE);
 			send(clientFD, buffer, (size_t)st.st_size, 0);
 		} else {
@@ -215,26 +279,27 @@ void handle_connection(int const clientFD)
 
 		close(clientFD);
 		free(buffer);
-		free(location);
+		// Note that this also frees location, since they are the same
+		// pointer.
+		free(header);
 		free(mime);
 		free(requestData);
 		return;
-
-	} else {
-		send(clientFD, REPLY_501, sizeof(REPLY_501) - 1, 0);
-		close(clientFD);
 	}
-
+	fprintf(stderr,
+		"handle_connection(): Client sent a %s request, for which handling is unimplemented\n",
+		reqType);
+	send(clientFD, REPLY_501, sizeof(REPLY_501) - 1, 0);
 	close(clientFD);
 	free(requestData);
 }
 
 int main()
 {
-
 	int const socketFD = socket(AF_INET, SOCK_STREAM, 0);
 
-	{ // I do not wish to dirty my code with this but alas it is needed
+	// Unfortunately required to setup the sockets.
+	{
 		int const optVal = 1;
 		setsockopt(socketFD, SOL_SOCKET, SO_REUSEADDR, (void const*)&optVal, sizeof(optVal));
 	}
@@ -245,33 +310,35 @@ int main()
 		.sin_addr.s_addr = htonl(INADDR_ANY)
 	};
 
-	if (bind(socketFD, (struct sockaddr const*)&serverAddr, sizeof(serverAddr)) != 0) {
-		perror("Socket binding failed");
+	if (bind(socketFD, (struct sockaddr const *) &serverAddr, sizeof(serverAddr)) != 0) {
+		perror("main(): Binding of socket to port failed");
 		exit(1);
 	}
 
 	if (listen(socketFD, 32) != 0) {
-		perror("Failed to listen");
+		perror("main(): Failed to listen on port " STRING_VALUE(PORT));
 		exit(1);
 	}
 
 	socklen_t clientLen = sizeof(struct sockaddr_in);
 
-	signal(SIGCHLD,SIG_IGN);
+	signal(SIGCHLD, SIG_IGN);
 
 	while (1) {
 		struct sockaddr_in client;
 		int const clientFD = accept(socketFD, (struct sockaddr *)&client, &clientLen);
 		pid_t const pid = fork();
-		if (pid == 0) {
+		if (pid == -1) {
+			perror("main(): fork() errored");
+			send(clientFD, REPLY_500, sizeof(REPLY_500) - 1, 0);
+			close(clientFD);
+		} else if (pid == 0) {
+			// Child Process
 			handle_connection(clientFD);
 			close(socketFD);
 			exit(0);
-		} else if (pid != -1) {
-			close(clientFD);
 		} else {
-			perror("Fork");
-			send(clientFD, REPLY_500, sizeof(REPLY_500) - 1, 0);
+			// Parent Process
 			close(clientFD);
 		}
 	}
