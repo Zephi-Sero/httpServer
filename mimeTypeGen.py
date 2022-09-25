@@ -36,9 +36,9 @@ for line in lines:
 		continue
 
 	mimetype = words[0]
-	extension = words[1]
-
-	finalStr += f"\t{{\"{extension}\", \"{mimetype}\\r\\n\"}},\n"
+	
+	for extension in words[1:]:
+		finalStr += f"\t{{\"{extension}\", \"{mimetype}\\r\\n\"}},\n"
 
 finalStr += "};"
 print(finalStr)
