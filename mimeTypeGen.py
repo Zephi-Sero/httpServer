@@ -29,7 +29,7 @@ for line in lines:
 		continue
 
 	words = line.split()
-	if len(words) != 2:
+	if len(words) < 2:
 		if len(words) == 1:
 			#print(f"No extension associated with MIME type '{words[0]}'")
 			pass
