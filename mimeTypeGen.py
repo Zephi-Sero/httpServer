@@ -35,8 +35,8 @@ for line in fullfile:
 	if len(words) == 0:
 		continue
 
-	type = line[0]
-	extension = line[1]
+	type = words[0]
+	extension = words[1]
 	
 	print(f"\t{{\"{extension}\", \"{type}\\r\\n\"}},")
 print("};")
