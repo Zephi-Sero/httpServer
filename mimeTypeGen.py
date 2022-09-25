@@ -36,7 +36,7 @@ for line in fullfile:
 		continue
 
 	type = line[0]
-	temp = template.replace("{2}",type)
-	for i in line[1:]:
-		print(temp.replace("{1}",i))
+	extension = line[1]
+	
+	print(f"\t{{\"{extension}\", \"{type}\\r\\n\"}},")
 print("};")
