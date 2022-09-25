@@ -20,7 +20,7 @@ typedef struct {
 } MimeType;
 
 
-const mimeType mimeTypes[] = {
+const MimeType mimeTypes[] = {
 
 """
 
